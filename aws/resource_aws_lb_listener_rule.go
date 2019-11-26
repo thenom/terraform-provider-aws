@@ -308,7 +308,7 @@ func suppressIfActionTypeNot(t string) schema.SchemaDiffSuppressFunc {
 		take := 2
 		i := strings.IndexFunc(k, func(r rune) bool {
 			if r == '.' {
-				take -= 1
+				take--
 				return take == 0
 			}
 			return false
@@ -343,6 +343,26 @@ func resourceAwsLbListenerRuleCreate(d *schema.ResourceData, meta interface{}) e
 		switch actionMap["type"].(string) {
 		case "forward":
 			action.TargetGroupArn = aws.String(actionMap["target_group_arn"].(string))
+
+		case "forward-weighted":
+			forwardList := actionMap["forward"].([]interface{})
+
+			if len(forwardList) == 1 {
+				forwardMap := forwardList[0].(map[string]interface{})
+
+				fmt.Printf("forwardMap: %s", forwardMap)
+
+				//action.ForwardConfig = &elbv2.ForwardActionConfig{
+				//	TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+				//		DurationSeconds: aws.Int64(forwardMap["target_group_stickiness"]["duration"].(int)),
+				//		Enabled:         aws.Bool(forwardMap["target_group_stickiness"]["enabled"].(bool)),
+				//	},
+				//	TargetGroups: nil,
+				//}
+
+			} else {
+				return errors.New("for actions of type 'forward', you must specify a 'foward' block")
+			}
 
 		case "redirect":
 			redirectList := actionMap["redirect"].([]interface{})
@@ -528,9 +548,8 @@ func resourceAwsLbListenerRuleRead(d *schema.ResourceData, meta interface{}) err
 		if err != nil {
 			if d.IsNewResource() && isAWSErr(err, elbv2.ErrCodeRuleNotFoundException, "") {
 				return resource.RetryableError(err)
-			} else {
-				return resource.NonRetryableError(err)
 			}
+			return resource.NonRetryableError(err)
 		}
 		return nil
 	})
@@ -561,11 +580,11 @@ func resourceAwsLbListenerRuleRead(d *schema.ResourceData, meta interface{}) err
 	if aws.StringValue(rule.Priority) == "default" {
 		d.Set("priority", 99999)
 	} else {
-		if priority, err := strconv.Atoi(aws.StringValue(rule.Priority)); err != nil {
+		var priority int
+		if priority, err = strconv.Atoi(aws.StringValue(rule.Priority)); err != nil {
 			return fmt.Errorf("Cannot convert rule priority %q to int: %s", aws.StringValue(rule.Priority), err)
-		} else {
-			d.Set("priority", priority)
 		}
+		d.Set("priority", priority)
 	}
 
 	sort.Slice(rule.Actions, func(i, j int) bool {
