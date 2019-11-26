@@ -67,6 +67,56 @@ func resourceAwsLbbListenerRule() *schema.Resource {
 							ValidateFunc: validation.IntBetween(1, 50000),
 						},
 
+						"forward": {
+							Type:             schema.TypeList,
+							Optional:         true,
+							Computed:         true,
+							DiffSuppressFunc: suppressIfActionTypeNot("forward"),
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"target_group_stickiness": {
+										Type:     schema.TypeList,
+										Optional: true,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"duration_seconds": {
+													Type:     schema.TypeInt,
+													Optional: true,
+													Computed: true,
+												},
+
+												"enabled": {
+													Type:     schema.TypeBool,
+													Optional: true,
+													Computed: true,
+												},
+											},
+										},
+									},
+
+									"target_groups": {
+										Type:     schema.TypeList,
+										Optional: false,
+										Required: true,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"target_group_arn": {
+													Type:     schema.TypeString,
+													Required: true,
+												},
+
+												"weight": {
+													Type:     schema.TypeInt,
+													Optional: true,
+													Computed: true,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+
 						"target_group_arn": {
 							Type:             schema.TypeString,
 							Optional:         true,
@@ -342,24 +392,22 @@ func resourceAwsLbListenerRuleCreate(d *schema.ResourceData, meta interface{}) e
 
 		switch actionMap["type"].(string) {
 		case "forward":
-			action.TargetGroupArn = aws.String(actionMap["target_group_arn"].(string))
-
-		case "forward-weighted":
 			forwardList := actionMap["forward"].([]interface{})
 
 			if len(forwardList) == 1 {
-				forwardMap := forwardList[0].(map[string]interface{})
+				if targetGroupArn, ok := actionMap["target_group_arn"]; ok && targetGroupArn != "" {
+					action.TargetGroupArn = aws.String(targetGroupArn.(string))
+				} else {
+					forwardMap := forwardList[0].(map[string]interface{})
 
-				fmt.Printf("forwardMap: %s", forwardMap)
-
-				//action.ForwardConfig = &elbv2.ForwardActionConfig{
-				//	TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
-				//		DurationSeconds: aws.Int64(forwardMap["target_group_stickiness"]["duration"].(int)),
-				//		Enabled:         aws.Bool(forwardMap["target_group_stickiness"]["enabled"].(bool)),
-				//	},
-				//	TargetGroups: nil,
-				//}
-
+					action.ForwardConfig = &elbv2.ForwardActionConfig{
+						TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+							DurationSeconds: aws.Int64(forwardMap["target_group_stickiness"]["duration"].(int)),
+							Enabled:         aws.Bool(forwardMap["target_group_stickiness"]["enabled"].(bool)),
+						},
+						TargetGroups: TargetGroupTuple,
+					}
+				}
 			} else {
 				return errors.New("for actions of type 'forward', you must specify a 'foward' block")
 			}
@@ -599,6 +647,15 @@ func resourceAwsLbListenerRuleRead(d *schema.ResourceData, meta interface{}) err
 		switch actionMap["type"] {
 		case "forward":
 			actionMap["target_group_arn"] = aws.StringValue(action.TargetGroupArn)
+			actionMap["forward"] = []map[string]interface{}{
+				{
+					"target_group_stickiness": map[string]interface{}{
+						"enabled":          aws.BoolValue(action.ForwardConfig.TargetGroupStickinessConfig.Enabled),
+						"duration_seconds": aws.Int64Value(action.ForwardConfig.TargetGroupStickinessConfig.DurationSeconds),
+					},
+					"target_groups": action.ForwardConfig.TargetGroups,
+				},
+			}
 
 		case "redirect":
 			actionMap["redirect"] = []map[string]interface{}{
@@ -732,7 +789,27 @@ func resourceAwsLbListenerRuleUpdate(d *schema.ResourceData, meta interface{}) e
 
 			switch actionMap["type"].(string) {
 			case "forward":
-				action.TargetGroupArn = aws.String(actionMap["target_group_arn"].(string))
+				forwardList := actionMap["forward"].([]interface{})
+
+				if len(forwardList) == 1 {
+					if targetGroupArn, ok := actionMap["target_group_arn"]; ok && targetGroupArn != "" {
+						action.TargetGroupArn = aws.String(targetGroupArn.(string))
+					} else {
+						forwardMap := forwardList[0].(map[string]interface{})
+
+						return fmt.Errorf("forwardMap: %s", forwardMap)
+
+						//action.ForwardConfig = &elbv2.ForwardActionConfig{
+						//	TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+						//		DurationSeconds: aws.Int64(forwardMap["target_group_stickiness"]["duration"].(int)),
+						//		Enabled:         aws.Bool(forwardMap["target_group_stickiness"]["enabled"].(bool)),
+						//	},
+						//	TargetGroups: nil,
+						//}
+					}
+				} else {
+					return errors.New("for actions of type 'forward', you must specify a 'foward' block")
+				}
 
 			case "redirect":
 				redirectList := actionMap["redirect"].([]interface{})
