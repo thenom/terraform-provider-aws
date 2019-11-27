@@ -82,13 +82,13 @@ func resourceAwsLbbListenerRule() *schema.Resource {
 												"duration_seconds": {
 													Type:     schema.TypeInt,
 													Optional: true,
-													Computed: true,
+													Default:  3600,
 												},
 
 												"enabled": {
 													Type:     schema.TypeBool,
 													Optional: true,
-													Computed: true,
+													Default:  false,
 												},
 											},
 										},
@@ -108,7 +108,7 @@ func resourceAwsLbbListenerRule() *schema.Resource {
 												"weight": {
 													Type:     schema.TypeInt,
 													Optional: true,
-													Computed: true,
+													Default:  1,
 												},
 											},
 										},
@@ -399,12 +399,14 @@ func resourceAwsLbListenerRuleCreate(d *schema.ResourceData, meta interface{}) e
 					action.TargetGroupArn = aws.String(targetGroupArn.(string))
 				} else {
 					forwardMap := forwardList[0].(map[string]interface{})
-					targetGroupStickinessConfigMap := forwardMap["target_group_stickiness"].(elbv2.TargetGroupStickinessConfig)
-					targetGroupsTuple := forwardMap["target_groups"].([]*elbv2.TargetGroupTuple)
+					targetGroupStickinessConfig := forwardMap["target_group_stickiness"].(map[string]interface{})
 
 					action.ForwardConfig = &elbv2.ForwardActionConfig{
-						TargetGroupStickinessConfig: &targetGroupStickinessConfigMap,
-						TargetGroups:                targetGroupsTuple,
+						TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+							DurationSeconds: aws.Int64(targetGroupStickinessConfig["duration_seconds"].(int64)),
+							Enabled:         aws.Bool(targetGroupStickinessConfig["enabled"].(bool)),
+						},
+						TargetGroups: forwardMap["target_groups"].([]*elbv2.TargetGroupTuple),
 					}
 				}
 			} else {
