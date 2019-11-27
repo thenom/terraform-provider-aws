@@ -75,7 +75,7 @@ func resourceAwsLbbListenerRule() *schema.Resource {
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"target_group_stickiness": {
-										Type:     schema.TypeList,
+										Type:     schema.TypeMap,
 										Optional: true,
 										Elem: &schema.Resource{
 											Schema: map[string]*schema.Schema{
@@ -399,13 +399,12 @@ func resourceAwsLbListenerRuleCreate(d *schema.ResourceData, meta interface{}) e
 					action.TargetGroupArn = aws.String(targetGroupArn.(string))
 				} else {
 					forwardMap := forwardList[0].(map[string]interface{})
+					targetGroupStickinessConfigMap := forwardMap["target_group_stickiness"].(elbv2.TargetGroupStickinessConfig)
+					targetGroupsTuple := forwardMap["target_groups"].([]*elbv2.TargetGroupTuple)
 
 					action.ForwardConfig = &elbv2.ForwardActionConfig{
-						TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
-							DurationSeconds: aws.Int64(forwardMap["target_group_stickiness"]["duration"].(int)),
-							Enabled:         aws.Bool(forwardMap["target_group_stickiness"]["enabled"].(bool)),
-						},
-						TargetGroups: TargetGroupTuple,
+						TargetGroupStickinessConfig: &targetGroupStickinessConfigMap,
+						TargetGroups:                targetGroupsTuple,
 					}
 				}
 			} else {
